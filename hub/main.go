@@ -5,19 +5,34 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"log"
 	"net/http"
 )
 
 func main() {
 	e := echo.New()
+	e.Use(middleware.Logger())                             // Logger
+	e.Use(middleware.Recover())                            // Recover
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{ //add CORS
+		AllowOrigins: []string{"*"},
+		AllowMethods: []string{echo.GET, echo.HEAD, echo.PUT, echo.PATCH, echo.POST, echo.DELETE},
+	}))
+
 	e.POST("/", subscribe)
+	e.Any("/test", test) //temp for testing
+
 	e.Logger.Fatal(e.Start(":8080"))
 }
 
+//test func to test route functionality
+func test(c echo.Context) error {
+	return c.String(http.StatusOK, "test worked!")
+}
 func subscribe(c echo.Context) error {
 
 	c.Logger().Print("WE FOUND THE HUB!")
+
 	//is this correct? prob not tbh
 	callback := c.QueryParams().Get("callback")
 	secret := []byte(c.QueryParams().Get("secret"))
@@ -29,7 +44,7 @@ func subscribe(c echo.Context) error {
 
 	client := http.Client{}
 	req, err := http.NewRequest("GET", callback, nil)
-	if err!= nil {
+	if err != nil {
 		//handle it
 	}
 	req.Header = http.Header{
@@ -46,12 +61,11 @@ func subscribe(c echo.Context) error {
 	if erro != nil {
 		log.Fatalln(err)
 	}
-	if resp.StatusCode <300 && resp.StatusCode >=200 {
+	if resp.StatusCode < 300 && resp.StatusCode >= 200 {
 		return c.String(http.StatusOK, "Subscribed!")
-	}else {
+	} else {
 		return c.String(http.StatusNotAcceptable, "Something went wrong :(")
 	}
-
 
 }
 
@@ -61,4 +75,3 @@ func Sign(msg, key []byte) string {
 
 	return hex.EncodeToString(mac.Sum(nil))
 }
-
