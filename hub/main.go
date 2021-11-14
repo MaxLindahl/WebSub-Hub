@@ -1,5 +1,9 @@
 package main
 
+//todo: fix get request to subscriber (it complains there is no hub.mode)
+//todo: implement lease time thingy
+//todo: Optimize locks
+
 import (
 	"bytes"
 	"crypto/hmac"
