@@ -1,3 +1,5 @@
+github.com/Joker666/AsyncGoDemo v0.0.0-20201127222251-d25052ce6161 h1:FHPNqCoUuzyqCLB6iDv6rcisn7Um9VUXjOdGyAf9430=
+github.com/Joker666/AsyncGoDemo v0.0.0-20201127222251-d25052ce6161/go.mod h1:uLqJVARE5BbseQzoy+54TtqUHo33bdngfDu+IKvKRBE=
 github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/golang-jwt/jwt v3.2.2+incompatible h1:IfV12K8xAKAnZqdXVzCZ+TOjboZ2keLg81eXfW3O+oY=

@@ -10,6 +10,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"github.com/Joker666/AsyncGoDemo/async"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"io/ioutil"
@@ -54,9 +55,12 @@ func subscribe(c echo.Context) error {
 	secret := []byte(c.FormValue("hub.secret"))
 	mode := []byte(c.FormValue("hub.mode"))
 	topic := []byte(c.FormValue("hub.topic"))
-	c.Response().After(func() {
+
+	async.Exec(func() interface{} { //async call to continue the subscription process so that we can return to the subscriber that we are working on it
 		AttemptRegistration(callback, secret, topic, mode)
+		return 1
 	})
+
 	return c.String(http.StatusOK, "Request accepted")
 	//is there a situation i want to decline a request? (read 5.2 how to decline)
 

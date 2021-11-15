@@ -2,7 +2,10 @@ module hub
 
 go 1.17
 
-require github.com/labstack/echo/v4 v4.6.1
+require (
+	github.com/Joker666/AsyncGoDemo v0.0.0-20201127222251-d25052ce6161
+	github.com/labstack/echo/v4 v4.6.1
+)
 
 require (
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
