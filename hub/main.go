@@ -22,12 +22,14 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type subscription struct {
-	callback string
-	secret   string
-	lease    string
+	callback         string
+	secret           string
+	lease            int
+	subscriptionDate string
 }
 
 func main() {
@@ -71,13 +73,14 @@ func AttemptRegistration(callback string, secret []byte, topic []byte, mode []by
 
 	//create a random string for verification of intent - hub.challenge value
 	challenge := RandStringBytes(10)
+	lease := 86400 //lease time, temp value 86400s = 1 day
 
 	log.Println("mode is : " + string(mode))
 	log.Println("secret is: " + hex.EncodeToString(secret))
 	log.Println("callback is : " + callback)
 
 	//Create the body for the verification request
-	form := url.Values{}
+	form := make(url.Values)
 
 	//create a request for verification
 	req, erro := http.NewRequest("GET", callback, strings.NewReader(form.Encode()))
@@ -93,11 +96,11 @@ func AttemptRegistration(callback string, secret []byte, topic []byte, mode []by
 	if err != nil {
 		return
 	}
-	lease := "30000"
+
 	req.Form.Set("hub.mode", string(mode))
 	req.Form.Set("hub.topic", string(topic))
 	req.Form.Set("hub.challenge", challenge)
-	req.Form.Set("hub.lease_seconds", lease)
+	req.Form.Set("hub.lease_seconds", strconv.Itoa(lease))
 	req.Header.Set("Content-Length", strconv.Itoa(len(req.Form.Encode())))
 
 	log.Println("Mode to be sent is: " + req.FormValue("hub.mode"))
@@ -139,9 +142,10 @@ func AttemptRegistration(callback string, secret []byte, topic []byte, mode []by
 				return
 			} else { //user wants to sub
 				subscribers[callback] = subscription{
-					callback: callback,
-					secret:   string(secret),
-					lease:    lease,
+					callback:         callback,
+					secret:           string(secret),
+					lease:            lease,
+					subscriptionDate: time.Now().String(),
 				}
 				mutex.Unlock() //release locks
 				mutex.RUnlock()
@@ -176,16 +180,24 @@ func Sign(msg, key []byte) string {
 }
 
 func Publish(c echo.Context) error {
+	subsToRemove := make([]string, 0, len(subscribers))
 	randData := []byte(`{"data":"THISISCOOLDATA"}`)
 	mutex.Lock() //lock read and write access while iterating through map
 	mutex.RLock()
-	for _, value := range subscribers { // Order not specified
-		PostJsonToSub(randData, value)
+	for key, value := range subscribers { // Order not specified
+		if getSecondsSinceSubscribed(value.subscriptionDate) > value.lease {
+			subsToRemove = append(subsToRemove, key) //if enough time has passed so that the subscription has expired, add the key to a list of subs to remove and don't send json
+		} else {
+			PostJsonToSub(randData, value) //if within lease time, send json
+		}
+	}
+	for i := 0; i < len(subsToRemove); i++ { //loop through all keys found to have expired lease time and remove them from the map
+		delete(subscribers, subsToRemove[i])
 	}
 	mutex.Unlock()
 	mutex.RUnlock()
 
-	return c.String(http.StatusOK, "Publishing data to subscribers")
+	return c.String(http.StatusOK, "Published data to subscribers")
 }
 
 func PostJsonToSub(data []byte, sub subscription) {
@@ -205,7 +217,19 @@ func PostJsonToSub(data []byte, sub subscription) {
 	if resp.StatusCode < 300 && resp.StatusCode >= 200 {
 		log.Println("Data successfully sent!")
 	} else {
-		log.Println("Error sending data: " + string(rune(resp.StatusCode)))
+		log.Println("Error sending data: " + strconv.Itoa(resp.StatusCode))
 	}
 	return
+}
+
+//help function to get time passed in seconds since given date
+func getSecondsSinceSubscribed(subscribeDateStr string) int {
+	currentTime := time.Now()
+	loc := currentTime.Location()
+	layout := "2006-01-02 15:04"
+	subscribeDate, err := time.ParseInLocation(layout, subscribeDateStr, loc)
+	if err != nil {
+		log.Println(err)
+	}
+	return int(subscribeDate.Sub(currentTime).Seconds())
 }
