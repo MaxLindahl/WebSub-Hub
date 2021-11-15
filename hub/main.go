@@ -13,6 +13,7 @@ import (
 	"github.com/Joker666/AsyncGoDemo/async"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"io"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -113,7 +114,12 @@ func AttemptRegistration(callback string, secret []byte, topic []byte, mode []by
 		return
 	}
 	log.Println(resp.StatusCode)
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+
+		}
+	}(resp.Body)
 	b, _ := ioutil.ReadAll(resp.Body)
 	log.Println("Response body: " + string(b))
 	if string(b) != challenge { //check if returned body matches challenge
