@@ -71,7 +71,7 @@ func AttemptRegistration(callback string, secret []byte, topic []byte, mode []by
 
 	//create a random string for verification of intent - hub.challenge value
 	challenge := RandStringBytes(10)
-	lease := 86400 //lease time, temp value 86400s = 1 day
+	lease := 84600 //lease time, temp value 86400s = 1 day
 
 	log.Println("mode is : " + string(mode))
 	log.Println("secret is: " + hex.EncodeToString(secret))
@@ -175,8 +175,8 @@ func Sign(msg, key []byte) string {
 
 func Publish(c echo.Context) error {
 	log.Println("Got to publish!")
-	log.Println("len subs: " + strconv.Itoa(len(subscribers)))
-	subsToRemove := make([]string, 0, len(subscribers))
+	log.Println("len subs: " + strconv.Itoa(subscribers.Count()))
+	subsToRemove := make([]string, 0, subscribers.Count())
 	log.Println("remove array made")
 	randData := []byte(`{"data":"THISISCOOLDATA"}`)
 	log.Println("Random data assigned")
