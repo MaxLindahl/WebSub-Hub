@@ -1,8 +1,5 @@
 package main
 
-//todo: fix get request to subscriber (it complains there is no hub.mode)
-//todo: implement lease time thingy
-//todo: Optimize locks
 //todo: error handling, edge cases etc
 
 import (
@@ -13,15 +10,15 @@ import (
 	"github.com/Joker666/AsyncGoDemo/async"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/orcaman/concurrent-map"
 	"io"
 	"io/ioutil"
 	"log"
+	"math"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
-	"sync"
 	"time"
 )
 
@@ -29,7 +26,7 @@ type subscription struct {
 	callback         string
 	secret           string
 	lease            int
-	subscriptionDate string
+	subscriptionDate time.Time
 }
 
 func main() {
@@ -47,9 +44,10 @@ func main() {
 }
 
 /////////////global variables/////////////////
-var client = http.Client{}
-var subscribers = make(map[string]subscription) //hold current subscribers key is same as callback
-var mutex = &sync.RWMutex{}                     //lock for map
+var client = http.Client{
+	Timeout: 5 * time.Second,
+}
+var subscribers = cmap.New() //concurrent map
 //////////////////////////////////////////////
 func subscribe(c echo.Context) error {
 
@@ -79,11 +77,21 @@ func AttemptRegistration(callback string, secret []byte, topic []byte, mode []by
 	log.Println("secret is: " + hex.EncodeToString(secret))
 	log.Println("callback is : " + callback)
 
-	//Create the body for the verification request
-	form := make(url.Values)
-
+	u, r := url.Parse(callback)
+	if r != nil {
+		log.Println("error parsing url")
+	}
+	q, e := url.ParseQuery(u.RawQuery)
+	if e != nil {
+		log.Println("error parsing query")
+	}
+	q.Add("hub.mode", string(mode))
+	q.Add("hub.topic", string(topic))
+	q.Add("hub.challenge", challenge)
+	q.Add("hub.lease_seconds", strconv.Itoa(lease))
+	u.RawQuery = q.Encode()
 	//create a request for verification
-	req, erro := http.NewRequest("GET", callback, strings.NewReader(form.Encode()))
+	req, erro := http.NewRequest("GET", u.String(), nil)
 	if erro != nil {
 		//handle it
 		log.Println("new request error Madge!")
@@ -96,17 +104,6 @@ func AttemptRegistration(callback string, secret []byte, topic []byte, mode []by
 	if err != nil {
 		return
 	}
-
-	req.Form.Set("hub.mode", string(mode))
-	req.Form.Set("hub.topic", string(topic))
-	req.Form.Set("hub.challenge", challenge)
-	req.Form.Set("hub.lease_seconds", strconv.Itoa(lease))
-	req.Header.Set("Content-Length", strconv.Itoa(len(req.Form.Encode())))
-
-	log.Println("Mode to be sent is: " + req.FormValue("hub.mode"))
-	log.Println("topic to be sent is: " + req.FormValue("hub.topic"))
-	log.Println("challenge to be sent is: " + req.FormValue("hub.challenge"))
-	log.Println("lease to be sent is: " + req.FormValue("hub.lease_seconds"))
 
 	//send the request
 	resp, er := client.Do(req)
@@ -133,22 +130,19 @@ func AttemptRegistration(callback string, secret []byte, topic []byte, mode []by
 	if resp.StatusCode < 300 && resp.StatusCode >= 200 {
 		if challenge == string(b) {
 			log.Println("Returned challenge is correct, continuing")
-			mutex.RLock()                      //lock read access
-			mutex.Lock()                       //lock write access
+
 			if string(mode) == "unsubscribe" { //if the user wants to unsub
-				delete(subscribers, callback)
-				mutex.Unlock() //release locks
-				mutex.RUnlock()
+				log.Println("unsubbing")
+				subscribers.Remove(callback)
 				return
 			} else { //user wants to sub
-				subscribers[callback] = subscription{
+				log.Println("subbing")
+				subscribers.Set(callback, subscription{
 					callback:         callback,
 					secret:           string(secret),
 					lease:            lease,
-					subscriptionDate: time.Now().String(),
-				}
-				mutex.Unlock() //release locks
-				mutex.RUnlock()
+					subscriptionDate: time.Now(),
+				})
 				return
 			}
 		} else {
@@ -180,23 +174,29 @@ func Sign(msg, key []byte) string {
 }
 
 func Publish(c echo.Context) error {
+	log.Println("Got to publish!")
+	log.Println("len subs: " + strconv.Itoa(len(subscribers)))
 	subsToRemove := make([]string, 0, len(subscribers))
+	log.Println("remove array made")
 	randData := []byte(`{"data":"THISISCOOLDATA"}`)
-	mutex.Lock() //lock read and write access while iterating through map
-	mutex.RLock()
-	for key, value := range subscribers { // Order not specified
+	log.Println("Random data assigned")
+	for tuple := range subscribers.IterBuffered() {
+		key := tuple.Key
+		value := tuple.Val.(subscription)
 		if getSecondsSinceSubscribed(value.subscriptionDate) > value.lease {
+			log.Println("Adding sub to remove list")
 			subsToRemove = append(subsToRemove, key) //if enough time has passed so that the subscription has expired, add the key to a list of subs to remove and don't send json
 		} else {
+			log.Println("posting data to sub!")
 			PostJsonToSub(randData, value) //if within lease time, send json
 		}
 	}
+	log.Println("got out of first loop!")
 	for i := 0; i < len(subsToRemove); i++ { //loop through all keys found to have expired lease time and remove them from the map
-		delete(subscribers, subsToRemove[i])
+		log.Println("removing a sub")
+		subscribers.Remove(subsToRemove[i])
 	}
-	mutex.Unlock()
-	mutex.RUnlock()
-
+	log.Println("publish: the end")
 	return c.String(http.StatusOK, "Published data to subscribers")
 }
 
@@ -223,13 +223,9 @@ func PostJsonToSub(data []byte, sub subscription) {
 }
 
 //help function to get time passed in seconds since given date
-func getSecondsSinceSubscribed(subscribeDateStr string) int {
+func getSecondsSinceSubscribed(subscribeDate time.Time) int {
 	currentTime := time.Now()
-	loc := currentTime.Location()
-	layout := "2006-01-02 15:04"
-	subscribeDate, err := time.ParseInLocation(layout, subscribeDateStr, loc)
-	if err != nil {
-		log.Println(err)
-	}
-	return int(subscribeDate.Sub(currentTime).Seconds())
+	log.Println("current time: " + currentTime.String())
+	log.Println("Sub time: " + subscribeDate.String())
+	return int(math.Abs(subscribeDate.Sub(currentTime).Seconds()))
 }
