@@ -6,6 +6,7 @@ require (
 	github.com/Joker666/AsyncGoDemo v0.0.0-20201127222251-d25052ce6161
 	github.com/labstack/echo/v4 v4.6.1
 	github.com/orcaman/concurrent-map v0.0.0-20210501183033-44dafcb38ecc
+	github.com/tomnomnom/linkheader v0.0.0-20180905144013-02ca5825eb80
 )
 
 require (
