@@ -59,12 +59,12 @@ func subscribe(c echo.Context) error {
 
 	//get form values and assign to variables for use
 	callback := c.FormValue("hub.callback")
-	secret := []byte(c.FormValue("hub.secret"))
-	mode := []byte(c.FormValue("hub.mode"))
-	topic := []byte(c.FormValue("hub.topic"))
+	secret := c.FormValue("hub.secret")
+	mode := c.FormValue("hub.mode")
+	topic := c.FormValue("hub.topic")
 
 	//check if the request is valid by making sure the input is in correct format
-	if isInputCorrect(callback, string(secret), string(topic), string(mode)) {
+	if isInputCorrect(callback, secret, topic, mode) {
 		//input is correct
 		async.Exec(func() interface{} { //async call to continue the subscription process so that we can return to the subscriber that we are working on it
 			AttemptRegistration(callback, secret, topic, mode)
@@ -75,7 +75,7 @@ func subscribe(c echo.Context) error {
 	} else {
 		//input is not correct
 		async.Exec(func() interface{} { //async call to inform the subscriber why it failed
-			InformSubscribeFailed(callback, string(topic))
+			InformSubscribeFailed(callback, topic)
 			return 1
 		})
 
@@ -126,7 +126,7 @@ func InformSubscribeFailed(callback, topic string) {
 }
 
 // AttemptRegistration Function to validate and finish a subscription or unsubscription attempt
-func AttemptRegistration(callback string, secret []byte, topic []byte, mode []byte) {
+func AttemptRegistration(callback, secret, topic, mode string) {
 
 	//create a random string for verification of intent - hub.challenge value
 	challenge := RandStringBytes(10)
@@ -144,8 +144,8 @@ func AttemptRegistration(callback string, secret []byte, topic []byte, mode []by
 		return
 	}
 	//query string arguments to append
-	q.Add("hub.mode", string(mode))
-	q.Add("hub.topic", string(topic))
+	q.Add("hub.mode", mode)
+	q.Add("hub.topic", topic)
 	q.Add("hub.challenge", challenge)
 	q.Add("hub.lease_seconds", strconv.Itoa(lease))
 	u.RawQuery = q.Encode()
@@ -187,8 +187,8 @@ func AttemptRegistration(callback string, secret []byte, topic []byte, mode []by
 		} else { //user wants to sub
 			subscribers.Set(callback, subscription{
 				callback:         callback,
-				secret:           string(secret),
-				topic:            string(topic),
+				secret:           secret,
+				topic:            topic,
 				lease:            lease,
 				subscriptionDate: time.Now(),
 			})
